@@ -28,12 +28,8 @@ public class CountExpression extends AbstractInputExpression {
 	
 	@Override
 	public ExtendedIterator<RDFNode> eval(RDFNode focusNode, NodeExpressionContext context) {
-		int count = 0;
 		ExtendedIterator<RDFNode> it = evalInput(focusNode, context);
-		while(it.hasNext()) {
-			it.next();
-			count++;
-		}
+		int count = it.toList().size();
 		List<RDFNode> results = Collections.singletonList(JenaDatatypes.createInteger(count));
 		return WrappedIterator.create(results.iterator());
 	}
