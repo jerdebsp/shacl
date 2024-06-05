@@ -103,6 +103,12 @@ public class RuleEngine extends AbstractEngine {
 		}
 		executeShapes(ruleShapes, null);
 	}
+
+	public void executeShape(Shape shape) throws InterruptedException {
+		List<Shape> ruleShapes = new ArrayList<>();
+		ruleShapes.add(shape);
+		executeShapes(ruleShapes, null);
+	}
 	
 	
 	public void executeAllDefaultValues() throws InterruptedException {

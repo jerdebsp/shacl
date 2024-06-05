@@ -102,7 +102,7 @@ public class RuleUtil {
 	 * @return the Model of inferred triples (i.e. inferencesModel if not null, or a new Model)
 	 */
 	public static Model executeRulesForShape(RDFNode nodeShape, Model dataModel, Model shapesModel, Model inferencesModel, ProgressMonitor monitor){
-		return executeRulesHelper(dataModel, null, shapesModel, inferencesModel, monitor);
+		return executeRulesHelper(dataModel, null, shapesModel, nodeShape, inferencesModel, monitor);
 	}
 
 	/**
@@ -164,11 +164,14 @@ public class RuleUtil {
 		boolean nested = SHACLScriptEngineManager.get().begin();
 		try {
 			engine.applyEntailments();
-			if(focusNode == null) {
+			if(focusNode == null && nodeShape == null) {
 				engine.setExcludeNeverMaterialize(true);
 				engine.executeAll();
-			}
-			else {
+			} else if (focusNode == null && nodeShape != null) {
+				engine.setExcludeNeverMaterialize(true);
+				Shape focusedShape = new Shape(shapesGraph, SHFactory.asShape(nodeShape));
+				engine.executeShape(focusedShape);
+			} else {
 				List<Shape> shapes = new ArrayList<>();
 				if (nodeShape == null){
 					shapes = getShapesWithTargetNode(focusNode, shapesGraph);
