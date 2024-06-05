@@ -26,6 +26,7 @@ import org.apache.jena.query.Dataset;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.rdf.model.RDFNode;
+import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.vocabulary.RDF;
 import org.topbraid.jenax.progress.ProgressMonitor;
 import org.topbraid.jenax.util.ARQFactory;
@@ -35,6 +36,7 @@ import org.topbraid.shacl.engine.SHACLScriptEngineManager;
 import org.topbraid.shacl.engine.Shape;
 import org.topbraid.shacl.engine.ShapesGraph;
 import org.topbraid.shacl.engine.ShapesGraphFactory;
+import org.topbraid.shacl.model.SHFactory;
 import org.topbraid.shacl.util.SHACLSystemModel;
 import org.topbraid.shacl.util.SHACLUtil;
 import org.topbraid.shacl.vocabulary.SH;
@@ -82,16 +84,54 @@ public class RuleUtil {
 	public static Model executeRules(RDFNode focusNode, Model shapesModel, Model inferencesModel, ProgressMonitor monitor) {
 		return executeRulesHelper(focusNode.getModel(), focusNode, shapesModel, inferencesModel, monitor);
 	}
-	
-	
-	private static Model executeRulesHelper(Model dataModel, RDFNode focusNode, Model shapesModel, Model inferencesModel, ProgressMonitor monitor) {
 
+
+
+	/**
+	 * Executes all rules from a given shapes on a given data Model.
+	 * If the shapesModel does not include the system graph triples then these will be added.
+	 * If inferencesModel is not null then it must be part of the dataModel (e.g. a sub-graph)
+	 * of a Jena MultiUnion object.
+	 * Otherwise, the function will create a new inferences Model which is merged with the
+	 * dataModel for the duration of the execution.
+	 * @param nodeShape  the nodeShape in the shapes Model
+	 * @param dataModel  the data Model
+	 * @param shapesModel  the shapes Model
+	 * @param inferencesModel  the Model for the inferred triples or null
+	 * @param monitor  an optional progress monitor
+	 * @return the Model of inferred triples (i.e. inferencesModel if not null, or a new Model)
+	 */
+	public static Model executeRulesForShape(RDFNode nodeShape, Model dataModel, Model shapesModel, Model inferencesModel, ProgressMonitor monitor){
+		return executeRulesHelper(dataModel, null, shapesModel, inferencesModel, monitor);
+	}
+
+	/**
+	 * Executes all rules from a given shapes on a given focus node (in its data Model).
+	 * If the shapesModel does not include the system graph triples then these will be added.
+	 * If inferencesModel is not null then it must be part of the dataModel (e.g. a sub-graph)
+	 * of a Jena MultiUnion object.
+	 * Otherwise, the function will create a new inferences Model which is merged with the
+	 * dataModel for the duration of the execution.
+	 * @param nodeShape  the nodeShape in the shapes Model
+	 * @param focusNode  the focus node in the data Model
+	 * @param shapesModel  the shapes Model
+	 * @param inferencesModel  the Model for the inferred triples or null
+	 * @param monitor  an optional progress monitor
+	 * @return the Model of inferred triples (i.e. inferencesModel if not null, or a new Model)
+	 */
+	public static Model executeRulesForShape(RDFNode nodeShape, RDFNode focusNode, Model shapesModel, Model inferencesModel, ProgressMonitor monitor){
+		return executeRulesHelper(focusNode.getModel(), focusNode, shapesModel, nodeShape, inferencesModel, monitor);
+	}
+
+
+
+	private static Model executeRulesHelper(Model dataModel, RDFNode focusNode, Model shapesModel, RDFNode nodeShape, Model inferencesModel, ProgressMonitor monitor){
 		// Ensure that the SHACL, DASH and TOSH graphs are present in the shapes Model
 		if(!shapesModel.contains(TOSH.hasShape, RDF.type, (RDFNode)null)) { // Heuristic
 			Model unionModel = SHACLSystemModel.getSHACLModel();
 			MultiUnion unionGraph = new MultiUnion(new Graph[] {
-				unionModel.getGraph(),
-				shapesModel.getGraph()
+					unionModel.getGraph(),
+					shapesModel.getGraph()
 			});
 			unionGraph.setBaseGraph(shapesModel.getGraph());
 			shapesModel = ModelFactory.createModelForGraph(unionGraph);
@@ -99,18 +139,18 @@ public class RuleUtil {
 
 		// Make sure all sh:Functions are registered
 		SHACLFunctions.registerFunctions(shapesModel);
-		
+
 		if(inferencesModel == null) {
 			inferencesModel = JenaUtil.createDefaultModel();
 			inferencesModel.setNsPrefixes(dataModel);
 			inferencesModel.withDefaultMappings(shapesModel);
 			MultiUnion unionGraph = new MultiUnion(new Graph[] {
-				dataModel.getGraph(),
-				inferencesModel.getGraph()
+					dataModel.getGraph(),
+					inferencesModel.getGraph()
 			});
 			dataModel = ModelFactory.createModelForGraph(unionGraph);
 		}
-		
+
 		// Create Dataset that contains both the data model and the shapes model
 		// (here, using a temporary URI for the shapes graph)
 		URI shapesGraphURI = SHACLUtil.createRandomShapesGraphURI();
@@ -120,7 +160,7 @@ public class RuleUtil {
 		ShapesGraph shapesGraph = ShapesGraphFactory.get().createShapesGraph(shapesModel);
 		RuleEngine engine = new RuleEngine(dataset, shapesGraphURI, shapesGraph, inferencesModel);
 		engine.setProgressMonitor(monitor);
-		
+
 		boolean nested = SHACLScriptEngineManager.get().begin();
 		try {
 			engine.applyEntailments();
@@ -129,7 +169,13 @@ public class RuleUtil {
 				engine.executeAll();
 			}
 			else {
-				List<Shape> shapes = getShapesWithTargetNode(focusNode, shapesGraph);
+				List<Shape> shapes = new ArrayList<>();
+				if (nodeShape == null){
+					shapes = getShapesWithTargetNode(focusNode, shapesGraph);
+				} else {
+					Shape focusedShape = new Shape(shapesGraph, SHFactory.asShape(nodeShape));
+					shapes.add(focusedShape);
+				}
 				engine.executeShapes(shapes, focusNode);
 			}
 		}
@@ -141,14 +187,24 @@ public class RuleUtil {
 		}
 		return inferencesModel;
 	}
+	
+	private static Model executeRulesHelper(Model dataModel, RDFNode focusNode, Model shapesModel, Model inferencesModel, ProgressMonitor monitor) {
+		return executeRulesHelper(focusNode.getModel(), focusNode, shapesModel, null, inferencesModel, monitor);
+	}
 
 
 	public static List<Shape> getShapesWithTargetNode(RDFNode focusNode, ShapesGraph shapesGraph) {
 		// TODO: Not a particularly smart algorithm - walks all shapes that have rules
 		List<Shape> shapes = new ArrayList<>();
 		for(Shape shape : shapesGraph.getRootShapes()) {
-			if(shape.getShapeResource().hasProperty(SH.rule) && shape.getShapeResource().hasTargetNode(focusNode)) {
+			if(shape.getShapeResource().hasProperty(SH.rule)  && shape.getShapeResource().hasTargetNode(focusNode)) {
 				shapes.add(shape);
+			} else {
+				shape.getShapeResource().getPropertyShapes().forEach(ps -> {
+					if (ps.hasProperty(SH.values) && shape.getShapeResource().hasTargetNode(focusNode)){
+						shapes.add(shape);
+					}
+				});
 			}
 		}
 		return shapes;
