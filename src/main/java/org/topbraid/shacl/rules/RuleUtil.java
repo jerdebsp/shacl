@@ -192,7 +192,7 @@ public class RuleUtil {
 	}
 	
 	private static Model executeRulesHelper(Model dataModel, RDFNode focusNode, Model shapesModel, Model inferencesModel, ProgressMonitor monitor) {
-		return executeRulesHelper(focusNode.getModel(), focusNode, shapesModel, null, inferencesModel, monitor);
+		return executeRulesHelper(dataModel, focusNode, shapesModel, null, inferencesModel, monitor);
 	}
 
 
